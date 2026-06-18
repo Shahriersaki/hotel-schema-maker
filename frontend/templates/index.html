@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hotel Schema Maker — Structured Data Generator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Mono:wght@300;400;500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+
+<!-- ── AUTH SCREENS ─────────────────────────────────── -->
+<div id="auth-screen" class="screen active">
+  <div class="auth-bg">
+    <div class="auth-bg-text">SCHEMA</div>
+  </div>
+  <div class="auth-container">
+    <div class="auth-brand">
+      <div class="brand-mark">⌘</div>
+      <div class="brand-name">Hotel Schema Maker</div>
+      <div class="brand-tagline">Structured Data · JSON-LD · XML Sitemaps</div>
+    </div>
+
+    <!-- Login Form -->
+    <div id="login-panel" class="auth-panel active">
+      <h2 class="auth-title">Sign in</h2>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="login-email" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div id="login-error" class="form-error hidden"></div>
+      <button class="btn-primary" onclick="handleLogin()">
+        <span>Sign In</span><span class="btn-arrow">→</span>
+      </button>
+      <p class="auth-switch">New here? <a href="#" onclick="switchAuth('register')">Create an account</a></p>
+    </div>
+
+    <!-- Register Form -->
+    <div id="register-panel" class="auth-panel">
+      <h2 class="auth-title">Create account</h2>
+      <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" id="reg-name" placeholder="Jane Smith">
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="reg-email" placeholder="you@example.com">
+      </div>
+      <div class="form-group">
+        <label>Password <span class="label-hint">(min. 8 chars)</span></label>
+        <input type="password" id="reg-password" placeholder="••••••••">
+      </div>
+      <div id="reg-error" class="form-error hidden"></div>
+      <button class="btn-primary" onclick="handleRegister()">
+        <span>Create Account</span><span class="btn-arrow">→</span>
+      </button>
+      <p class="auth-switch">Already have an account? <a href="#" onclick="switchAuth('login')">Sign in</a></p>
+    </div>
+  </div>
+</div>
+
+<!-- ── MAIN APP ──────────────────────────────────────── -->
+<div id="app-screen" class="screen">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-mark">⌘</div>
+      <div>
+        <div class="sidebar-brand-name">Schema Maker</div>
+        <div class="sidebar-brand-sub">Hotel Edition</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Workspace</div>
+      <a class="nav-item active" href="#" data-view="dashboard" onclick="switchView('dashboard')">
+        <span class="nav-icon">◈</span> Dashboard
+      </a>
+      <a class="nav-item" href="#" data-view="new-project" onclick="switchView('new-project')">
+        <span class="nav-icon">＋</span> New Project
+      </a>
+      <div class="nav-section-label" style="margin-top:12px">Knowledge</div>
+      <a class="nav-item" href="#" data-view="feed" onclick="switchView('feed')">
+        <span class="nav-icon">⬡</span> Feed System
+      </a>
+      <a class="nav-item" href="#" data-view="trends" onclick="switchView('trends')">
+        <span class="nav-icon">◎</span> Trend Checker
+      </a>
+      <div class="nav-section-label admin-only hidden" style="margin-top:12px">Admin</div>
+      <a class="nav-item admin-only hidden" href="#" data-view="admin" onclick="switchView('admin')">
+        <span class="nav-icon">⬟</span> User Management
+      </a>
+    </nav>
+
+    <div class="sidebar-projects">
+      <div class="nav-section-label">Recent Projects</div>
+      <div id="sidebar-project-list"></div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar" id="user-avatar">J</div>
+        <div class="user-details">
+          <div class="user-name" id="user-name">Loading…</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <div class="user-email" id="user-email"></div>
+            <span class="role-badge" id="role-badge"></span>
+          </div>
+        </div>
+      </div>
+      <button class="btn-logout" onclick="handleLogout()" title="Sign out">⎋</button>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content">
+
+    <!-- ── DASHBOARD VIEW ── -->
+    <div id="view-dashboard" class="view active">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title">Dashboard</h1>
+          <p class="view-subtitle">Manage your hotel schema projects</p>
+        </div>
+        <button class="btn-primary" onclick="switchView('new-project')">
+          <span>New Project</span><span class="btn-arrow">→</span>
+        </button>
+      </div>
+      <div id="projects-grid" class="projects-grid"></div>
+      <div id="no-projects" class="empty-state hidden">
+        <div class="empty-icon">◫</div>
+        <div class="empty-title">No projects yet</div>
+        <div class="empty-desc">Create your first hotel schema project to get started.</div>
+        <button class="btn-primary" onclick="switchView('new-project')">Create First Project →</button>
+      </div>
+    </div>
+
+    <!-- ── NEW PROJECT VIEW ── -->
+    <div id="view-new-project" class="view">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title">New Project</h1>
+          <p class="view-subtitle">Enter hotel details to generate schema markup</p>
+        </div>
+      </div>
+
+      <div class="form-card">
+        <div class="form-section">
+          <div class="section-label">Project</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Project Name <span class="req">*</span></label>
+              <input type="text" id="proj-name" placeholder="e.g. Grand Hotel Vienna">
+            </div>
+            <div class="form-group">
+              <label>Hotel Website URL <span class="req">*</span></label>
+              <input type="url" id="proj-url" placeholder="https://www.grandhotelvienna.com">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Hotel Identity</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Hotel Name <span class="req">*</span></label>
+              <input type="text" id="hotel-name" placeholder="Grand Hotel Vienna">
+            </div>
+            <div class="form-group">
+              <label>Star Rating</label>
+              <select id="hotel-stars">
+                <option value="">Select rating</option>
+                <option value="1">★ 1 Star</option>
+                <option value="2">★★ 2 Stars</option>
+                <option value="3">★★★ 3 Stars</option>
+                <option value="4">★★★★ 4 Stars</option>
+                <option value="5">★★★★★ 5 Stars</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Description <span class="label-hint">(optional — will be fetched if blank)</span></label>
+            <textarea id="hotel-desc" rows="3" placeholder="A luxury hotel in the heart of Vienna..."></textarea>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Address</div>
+          <div class="form-row">
+            <div class="form-group flex-2">
+              <label>Street Address <span class="req">*</span></label>
+              <input type="text" id="addr-street" placeholder="Kärntner Ring 2">
+            </div>
+            <div class="form-group">
+              <label>City <span class="req">*</span></label>
+              <input type="text" id="addr-city" placeholder="Vienna">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>State / Region</label>
+              <input type="text" id="addr-region" placeholder="Vienna">
+            </div>
+            <div class="form-group">
+              <label>Postal Code</label>
+              <input type="text" id="addr-postal" placeholder="1010">
+            </div>
+            <div class="form-group">
+              <label>Country Code <span class="req">*</span></label>
+              <input type="text" id="addr-country" placeholder="AT" maxlength="2">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Contact & Policy</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Phone</label>
+              <input type="tel" id="hotel-phone" placeholder="+43 1 515 80 0">
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <input type="email" id="hotel-email" placeholder="reservations@grandhotel.com">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Check-in Time</label>
+              <input type="time" id="hotel-checkin" value="14:00">
+            </div>
+            <div class="form-group">
+              <label>Check-out Time</label>
+              <input type="time" id="hotel-checkout" value="12:00">
+            </div>
+            <div class="form-group">
+              <label>Price Range</label>
+              <select id="hotel-price">
+                <option value="">Select</option>
+                <option value="$">$ Budget</option>
+                <option value="$$">$$ Moderate</option>
+                <option value="$$$">$$$ Upscale</option>
+                <option value="$$$$">$$$$ Luxury</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Amenities <span class="label-hint">(comma-separated, or leave blank for defaults)</span></div>
+          <div class="form-group">
+            <textarea id="hotel-amenities" rows="2" placeholder="Free Wi-Fi, Swimming Pool, Spa, Fitness Center, Restaurant, Bar, Concierge, Valet Parking, Room Service"></textarea>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="section-label">Booking</div>
+          <div class="form-group">
+            <label>Direct Booking URL <span class="label-hint">(optional)</span></label>
+            <input type="url" id="hotel-booking" placeholder="https://booking.grandhotelvienna.com">
+          </div>
+        </div>
+
+        <div id="new-proj-error" class="form-error hidden"></div>
+
+        <div class="form-actions">
+          <button class="btn-secondary" onclick="switchView('dashboard')">Cancel</button>
+          <button class="btn-primary" onclick="createProject()">
+            <span>Create Project</span><span class="btn-arrow">→</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PROJECT DETAIL VIEW ── -->
+    <div id="view-project" class="view">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title" id="project-title">Project</h1>
+          <p class="view-subtitle" id="project-subtitle"></p>
+        </div>
+        <div class="header-actions">
+          <button class="btn-secondary" onclick="switchView('dashboard')">← Back</button>
+          <button class="btn-danger-sm" id="delete-project-btn">Delete</button>
+        </div>
+      </div>
+
+      <!-- Pipeline Steps -->
+      <div class="pipeline">
+        <div class="pipeline-step" id="step-crawl">
+          <div class="step-number">1</div>
+          <div class="step-body">
+            <div class="step-title">Crawl Website</div>
+            <div class="step-desc">Discover all pages automatically</div>
+            <button class="btn-step" id="btn-crawl" onclick="runCrawl()">Run Crawl →</button>
+            <div class="step-result" id="crawl-result"></div>
+          </div>
+        </div>
+        <div class="pipeline-connector">⋯</div>
+        <div class="pipeline-step" id="step-enrich">
+          <div class="step-number">2</div>
+          <div class="step-body">
+            <div class="step-title">Enrich Data</div>
+            <div class="step-desc">Fill gaps from online sources</div>
+            <button class="btn-step" id="btn-enrich" onclick="runEnrich()">Enrich →</button>
+            <div class="step-result" id="enrich-result"></div>
+          </div>
+        </div>
+        <div class="pipeline-connector">⋯</div>
+        <div class="pipeline-step" id="step-schema">
+          <div class="step-number">3</div>
+          <div class="step-body">
+            <div class="step-title">Generate Schema</div>
+            <div class="step-desc">JSON-LD for every page</div>
+            <button class="btn-step" id="btn-schema" onclick="runSchemas()">Generate →</button>
+            <div class="step-result" id="schema-result"></div>
+          </div>
+        </div>
+        <div class="pipeline-connector">⋯</div>
+        <div class="pipeline-step" id="step-sitemap">
+          <div class="step-number">4</div>
+          <div class="step-body">
+            <div class="step-title">XML Sitemap</div>
+            <div class="step-desc">Complete sitemap file</div>
+            <button class="btn-step" id="btn-sitemap" onclick="runSitemap()">Generate →</button>
+            <div class="step-result" id="sitemap-result"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Or run all at once -->
+      <div class="pipeline-all">
+        <button class="btn-run-all" id="btn-run-all" onclick="runAll()">
+          ⚡ Run Full Pipeline (All Steps)
+        </button>
+      </div>
+
+      <!-- Pages Found -->
+      <div id="pages-section" class="result-section hidden">
+        <div class="section-header">
+          <h3>Pages Discovered <span id="pages-count" class="badge"></span></h3>
+          <div class="section-actions" style="display:flex;gap:6px">
+            <button class="btn-xs" onclick="toggleAllPages(true)">Select All</button>
+            <button class="btn-xs" onclick="toggleAllPages(false)">Deselect All</button>
+            <button class="btn-xs" onclick="openAddSinglePageModal()">＋ Add Page</button>
+            <button class="btn-xs" onclick="openManagePagesModal()">✏ Edit List</button>
+          </div>
+        </div>
+        <div id="pages-list" class="pages-list"></div>
+      </div>
+
+      <!-- Enrichment Log -->
+      <div id="enrich-section" class="result-section hidden">
+        <div class="section-header">
+          <h3>Enrichment Log</h3>
+        </div>
+        <div id="enrich-log" class="log-list"></div>
+      </div>
+
+      <!-- Schemas Output -->
+      <div id="schemas-section" class="result-section hidden">
+        <div class="section-header">
+          <h3>Generated Schemas <span id="schemas-count" class="badge"></span></h3>
+          <button class="btn-xs" onclick="copyAllSchemas()">Copy All</button>
+        </div>
+        <div id="schemas-list" class="schemas-list"></div>
+      </div>
+
+      <!-- Sitemap Output -->
+      <div id="sitemap-section" class="result-section hidden">
+        <div class="section-header">
+          <h3>XML Sitemap</h3>
+          <div class="section-actions">
+            <button class="btn-xs" onclick="copySitemap()">Copy XML</button>
+            <button class="btn-xs" id="btn-download-sitemap" onclick="downloadSitemap()">Download</button>
+          </div>
+        </div>
+        <pre id="sitemap-preview" class="code-block"></pre>
+      </div>
+
+      <!-- Corrections Section -->
+      <div id="corrections-section" class="result-section hidden">
+        <div class="section-header">
+          <h3>Schema Corrections <span id="corrections-count" class="badge"></span></h3>
+          <button class="btn-xs" onclick="openSubmitCorrection()">+ Submit Error</button>
+        </div>
+        <div id="corrections-list" class="corrections-list"></div>
+      </div>
+    </div>
+
+    <!-- ── FEED SYSTEM VIEW ── -->
+    <div id="view-feed" class="view">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title">Feed System</h1>
+          <p class="view-subtitle">Upload validator results, guidelines, and schema corrections to keep the tool current</p>
+        </div>
+        <button class="btn-primary" onclick="openAddKBModal()" style="width:auto;padding:10px 20px">
+          <span>Add Entry</span><span class="btn-arrow">→</span>
+        </button>
+      </div>
+
+      <!-- Quick Validator Paste -->
+      <div class="feed-card">
+        <div class="feed-card-header">
+          <div class="feed-card-icon">⌖</div>
+          <div>
+            <div class="feed-card-title">Paste Validator Output</div>
+            <div class="feed-card-desc">Paste results from Google Rich Results Test or schema.org validator — errors are parsed automatically</div>
+          </div>
+        </div>
+        <textarea id="validator-paste" rows="6" placeholder="Paste validator errors here (plain text or JSON)...&#10;&#10;Example:&#10;  Missing field 'checkinTime'&#10;  Invalid value for 'starRating'&#10;  The property 'image' must be of type ImageObject"></textarea>
+        <div class="feed-paste-actions">
+          <div id="paste-result" class="paste-result hidden"></div>
+          <button class="btn-step" onclick="parseValidatorPaste()">Parse Errors →</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+        <!-- Feed Reference Schema Example -->
+        <div class="feed-card" style="margin-bottom:0">
+          <div class="feed-card-header">
+            <div class="feed-card-icon">⬡</div>
+            <div>
+              <div class="feed-card-title">Quick Feed: Reference Schema</div>
+              <div class="feed-card-desc">Provide a valid JSON-LD schema example to prioritize as reference</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px;">
+            <input type="text" id="feed-schema-title" placeholder="Reference Title (e.g. Valid Hotel Schema Example)" style="width:100%;padding:10px;border:1px solid rgba(0,0,0,0.15);border-radius:6px;background:#fff;font-size:13px">
+            <textarea id="feed-schema-content" rows="4" placeholder="Paste JSON-LD schema here..." style="width:100%;padding:10px;border:1px solid rgba(0,0,0,0.15);border-radius:6px;background:#fff;font-size:13px;font-family:var(--mono)"></textarea>
+            <button class="btn-step" onclick="submitFeedSchema()">Feed Schema →</button>
+          </div>
+        </div>
+
+        <!-- Feed Latest News/Updates -->
+        <div class="feed-card" style="margin-bottom:0">
+          <div class="feed-card-header">
+            <div class="feed-card-icon">◎</div>
+            <div>
+              <div class="feed-card-title">Quick Feed: Latest News</div>
+              <div class="feed-card-desc">Inject updates or news content directly to keep the KB context current</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px;">
+            <input type="text" id="feed-news-title" placeholder="News Title (e.g. Google update on starRating)" style="width:100%;padding:10px;border:1px solid rgba(0,0,0,0.15);border-radius:6px;background:#fff;font-size:13px">
+            <textarea id="feed-news-content" rows="4" placeholder="Enter news/guidelines details..." style="width:100%;padding:10px;border:1px solid rgba(0,0,0,0.15);border-radius:6px;background:#fff;font-size:13px"></textarea>
+            <button class="btn-step" onclick="submitFeedNews()">Feed News →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- KB Type Guide -->
+      <div class="feed-type-guide">
+        <div class="type-guide-title">Entry Types</div>
+        <div class="type-guide-grid">
+          <div class="type-chip" onclick="openAddKBModal('guideline')"><span class="type-dot guideline"></span>guideline</div>
+          <div class="type-chip" onclick="openAddKBModal('validator_error')"><span class="type-dot validator_error"></span>validator_error</div>
+          <div class="type-chip" onclick="openAddKBModal('deprecated')"><span class="type-dot deprecated"></span>deprecated</div>
+          <div class="type-chip" onclick="openAddKBModal('required')"><span class="type-dot required"></span>required</div>
+          <div class="type-chip" onclick="openAddKBModal('recommended')"><span class="type-dot recommended"></span>recommended</div>
+          <div class="type-chip" onclick="openAddKBModal('example')"><span class="type-dot example"></span>example</div>
+          <div class="type-chip" onclick="openAddKBModal('news')"><span class="type-dot news"></span>news</div>
+          <div class="type-chip" onclick="openAddKBModal('note')"><span class="type-dot note"></span>note</div>
+        </div>
+      </div>
+
+      <!-- KB Entries List -->
+      <div class="result-section">
+        <div class="section-header">
+          <h3>Knowledge Base <span id="kb-count" class="badge">0</span></h3>
+          <div class="section-actions">
+            <select id="kb-filter" onchange="loadKBEntries()" class="filter-select">
+              <option value="">All types</option>
+              <option value="guideline">guideline</option>
+              <option value="validator_error">validator_error</option>
+              <option value="deprecated">deprecated</option>
+              <option value="required">required</option>
+              <option value="recommended">recommended</option>
+              <option value="example">example</option>
+              <option value="news">news</option>
+              <option value="note">note</option>
+            </select>
+            <button class="btn-xs" onclick="loadKBEntries()">Refresh</button>
+          </div>
+        </div>
+        <div id="kb-entries-list" class="kb-list"></div>
+        <div id="kb-empty" class="empty-state hidden" style="padding:40px 20px">
+          <div class="empty-icon" style="font-size:32px">⬡</div>
+          <div class="empty-title" style="font-size:18px">Knowledge base is empty</div>
+          <div class="empty-desc">Add guidelines, validator errors, or schema rules to keep your schemas current.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TREND CHECKER VIEW ── -->
+    <div id="view-trends" class="view">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title">Trend Checker</h1>
+          <p class="view-subtitle">Latest schema.org and Google Structured Data guidelines — auto-applied to all schema generation</p>
+        </div>
+        <button class="btn-secondary" onclick="fetchTrends(true)" id="btn-refresh-trends">
+          ↺ Refresh Now
+        </button>
+      </div>
+
+      <!-- Digest Summary -->
+      <div id="digest-panel" class="digest-panel">
+        <div class="digest-loading">Loading digest…</div>
+      </div>
+
+      <!-- Source Cards -->
+      <div class="trend-sources-grid" id="trend-sources-grid">
+        <div class="trend-source-placeholder">Fetching latest trends…</div>
+      </div>
+
+      <!-- Snapshots timeline -->
+      <div class="result-section" style="margin-top:24px">
+        <div class="section-header">
+          <h3>Fetch History</h3>
+          <button class="btn-xs" onclick="loadTrendSnapshots()">Refresh</button>
+        </div>
+        <div id="trend-snapshots-list" class="log-list" style="padding:16px 24px"></div>
+      </div>
+    </div>
+
+    <!-- ── CORRECTION MODAL ── -->
+    <div id="correction-modal" class="modal-overlay hidden">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Submit Validator Error</h3>
+          <button onclick="closeModal('correction-modal')" class="modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Project</label>
+            <select id="corr-project-select"></select>
+          </div>
+          <div class="form-group">
+            <label>Page URL</label>
+            <input type="url" id="corr-page-url" placeholder="https://example.com/rooms">
+          </div>
+          <div class="form-group">
+            <label>Validator Errors <span class="label-hint">(one per line)</span></label>
+            <textarea id="corr-errors" rows="4" placeholder="Missing field 'checkinTime'&#10;Invalid value for 'starRating'"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Instructions <span class="label-hint">(optional — use ADD/REMOVE/SET/TYPE commands)</span></label>
+            <textarea id="corr-instructions" rows="3" placeholder="ADD checkinTime T14:00:00&#10;SET starRating.bestRating 5&#10;REMOVE priceRange"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Original Schema <span class="label-hint">(paste JSON array)</span></label>
+            <textarea id="corr-schema" rows="5" placeholder='[{"@context":"https://schema.org","@type":"Hotel",...}]'></textarea>
+          </div>
+          <div id="corr-error" class="form-error hidden"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeModal('correction-modal')">Cancel</button>
+          <button class="btn-primary" onclick="submitCorrectionModal()" style="width:auto;padding:10px 20px">Submit →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── KB ENTRY MODAL ── -->
+    <div id="kb-modal" class="modal-overlay hidden">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Add Knowledge Base Entry</h3>
+          <button onclick="closeModal('kb-modal')" class="modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group flex-2">
+              <label>Title <span class="req">*</span></label>
+              <input type="text" id="kb-title" placeholder="e.g. checkinTime must use T prefix">
+            </div>
+            <div class="form-group">
+              <label>Type <span class="req">*</span></label>
+              <select id="kb-type">
+                <option value="guideline">guideline</option>
+                <option value="validator_error">validator_error</option>
+                <option value="deprecated">deprecated</option>
+                <option value="required">required</option>
+                <option value="recommended">recommended</option>
+                <option value="example">example</option>
+                <option value="news">news</option>
+                <option value="note">note</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Content <span class="req">*</span></label>
+            <textarea id="kb-content" rows="5" placeholder="Paste guideline text, error message, property list, or JSON example…"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Source <span class="label-hint">(URL or name)</span></label>
+            <input type="text" id="kb-source" placeholder="Google Rich Results Test / schema.org / manual">
+          </div>
+          <div id="kb-error" class="form-error hidden"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeModal('kb-modal')">Cancel</button>
+          <button class="btn-primary" onclick="submitKBModal()" style="width:auto;padding:10px 20px">Save Entry →</button>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ── ADMIN VIEW ── -->
+    <div id="view-admin" class="view">
+      <div class="view-header">
+        <div>
+          <h1 class="view-title">User Management</h1>
+          <p class="view-subtitle">Admin panel — manage users, roles, and audit trail</p>
+        </div>
+        <button class="btn-secondary" onclick="loadAdminData()">↺ Refresh</button>
+      </div>
+
+      <!-- Stats row -->
+      <div class="admin-stats-row" id="admin-stats-row">
+        <div class="admin-stat-card"><div class="astat-val" id="stat-users">—</div><div class="astat-label">Users</div></div>
+        <div class="admin-stat-card"><div class="astat-val" id="stat-projects">—</div><div class="astat-label">Projects</div></div>
+        <div class="admin-stat-card"><div class="astat-val" id="stat-kb">—</div><div class="astat-label">KB Entries</div></div>
+        <div class="admin-stat-card"><div class="astat-val" id="stat-corrections">—</div><div class="astat-label">Corrections</div></div>
+      </div>
+
+      <!-- User table -->
+      <div class="result-section">
+        <div class="section-header">
+          <h3>All Users</h3>
+          <button class="btn-xs" onclick="openInviteModal()">+ Invite User</button>
+        </div>
+        <div id="admin-user-table" class="admin-user-table"></div>
+      </div>
+
+      <!-- Audit log -->
+      <div class="result-section" style="margin-top:20px">
+        <div class="section-header">
+          <h3>Audit Log</h3>
+          <select id="audit-user-filter" onchange="loadAuditLog()" class="filter-select">
+            <option value="">All users</option>
+          </select>
+        </div>
+        <div id="audit-log-list" class="log-list" style="padding:16px 24px"></div>
+      </div>
+    </div>
+
+    <!-- ── SCHEMA PREVIEW MODAL ── -->
+    <div id="schema-preview-modal" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:780px">
+        <div class="modal-header">
+          <div>
+            <h3 id="preview-modal-title">Schema Preview</h3>
+            <div id="preview-modal-url" style="font-size:12px;font-family:var(--mono);color:var(--stone);margin-top:2px"></div>
+          </div>
+          <button onclick="closeModal('schema-preview-modal')" class="modal-close">✕</button>
+        </div>
+        <div class="modal-body" style="padding:0">
+          <!-- Tab bar -->
+          <div class="preview-tabs">
+            <button class="preview-tab active" onclick="switchPreviewTab('html')">HTML Embed</button>
+            <button class="preview-tab" onclick="switchPreviewTab('json')">JSON-LD</button>
+            <button class="preview-tab" onclick="switchPreviewTab('warnings')">Warnings <span id="preview-warn-badge" class="badge" style="background:#c0392b"></span></button>
+          </div>
+          <div id="preview-tab-html" class="preview-tab-content active">
+            <pre id="preview-html-code" class="code-block" style="max-height:420px;margin:0"></pre>
+          </div>
+          <div id="preview-tab-json" class="preview-tab-content">
+            <pre id="preview-json-code" class="code-block" style="max-height:420px;margin:0"></pre>
+          </div>
+          <div id="preview-tab-warnings" class="preview-tab-content">
+            <div id="preview-warnings-list" style="padding:16px 20px;font-family:var(--mono);font-size:12px"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeModal('schema-preview-modal')">Close</button>
+          <button class="btn-xs" onclick="copyPreviewContent('json')">Copy JSON</button>
+          <button class="btn-primary" onclick="copyPreviewContent('html')" style="width:auto;padding:10px 20px">Copy HTML →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── EXPORT MODAL ── -->
+    <div id="export-modal" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:520px">
+        <div class="modal-header">
+          <h3>Export Project</h3>
+          <button onclick="closeModal('export-modal')" class="modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="export-options">
+            <div class="export-option" onclick="exportAction('all-jsonld')">
+              <div class="export-icon">{ }</div>
+              <div class="export-body">
+                <div class="export-title">All JSON-LD (HTML)</div>
+                <div class="export-desc">One .html file per page with embed-ready &lt;script&gt; tags</div>
+              </div>
+              <div class="export-arrow">→</div>
+            </div>
+            <div class="export-option" onclick="exportAction('schemas-json')">
+              <div class="export-icon">[ ]</div>
+              <div class="export-body">
+                <div class="export-title">All Schemas (JSON)</div>
+                <div class="export-desc">Complete schemas_generated.json for all pages</div>
+              </div>
+              <div class="export-arrow">→</div>
+            </div>
+            <div class="export-option" onclick="exportAction('sitemap')">
+              <div class="export-icon">⊞</div>
+              <div class="export-body">
+                <div class="export-title">XML Sitemap</div>
+                <div class="export-desc">sitemap.xml — submit to Google Search Console</div>
+              </div>
+              <div class="export-arrow">→</div>
+            </div>
+            <div class="export-option" onclick="exportAction('full-bundle')">
+              <div class="export-icon">⊡</div>
+              <div class="export-body">
+                <div class="export-title">Full Bundle (JSON)</div>
+                <div class="export-desc">Everything: schemas + sitemap + hotel data + pages</div>
+              </div>
+              <div class="export-arrow">→</div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeModal('export-modal')">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── MULTI-PAGE PATCH MODAL ── -->
+    <div id="multipatch-modal" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:600px">
+        <div class="modal-header">
+          <h3>Multi-Page Patch</h3>
+          <button onclick="closeModal('multipatch-modal')" class="modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:13px;color:var(--stone);margin-bottom:12px">Apply instruction commands to multiple pages at once. Leave page URLs empty to patch all pages.</p>
+          <div class="form-group">
+            <label>Instructions <span class="req">*</span></label>
+            <textarea id="patch-instructions" rows="6" placeholder="ADD checkinTime T14:00:00&#10;SET starRating.bestRating 5&#10;TYPE Hotel IF @type=LodgingBusiness&#10;REMOVE priceRange&#10;APPEND amenityFeature {&quot;@type&quot;:&quot;LocationFeatureSpecification&quot;,&quot;name&quot;:&quot;Pool&quot;,&quot;value&quot;:true}"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Target @type <span class="label-hint">(optional — leave blank for all schemas)</span></label>
+            <input type="text" id="patch-target-type" placeholder="Hotel">
+          </div>
+          <div class="form-group">
+            <label>Page URLs <span class="label-hint">(optional — one per line, blank = all pages)</span></label>
+            <textarea id="patch-page-urls" rows="3" placeholder="https://example.com/rooms&#10;https://example.com/spa"></textarea>
+          </div>
+          <div id="patch-preview" class="paste-result hidden" style="margin-top:8px"></div>
+          <div id="patch-error" class="form-error hidden"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="previewPatchInstructions()">Preview Ops</button>
+          <button class="btn-secondary" onclick="closeModal('multipatch-modal')">Cancel</button>
+          <button class="btn-primary" onclick="submitMultiPatch()" style="width:auto;padding:10px 20px">Apply Patch →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CHANGE PASSWORD MODAL ── -->
+    <div id="password-modal" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:420px">
+        <div class="modal-header">
+          <h3>Change Password</h3>
+          <button onclick="closeModal('password-modal')" class="modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Current Password</label>
+            <input type="password" id="pw-current" placeholder="••••••••">
+          </div>
+          <div class="form-group">
+            <label>New Password <span class="label-hint">(min 8 chars)</span></label>
+            <input type="password" id="pw-new" placeholder="••••••••">
+          </div>
+          <div class="form-group">
+            <label>Confirm New Password</label>
+            <input type="password" id="pw-confirm" placeholder="••••••••">
+          </div>
+          <div id="pw-error" class="form-error hidden"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeModal('password-modal')">Cancel</button>
+          <button class="btn-primary" onclick="submitPasswordChange()" style="width:auto;padding:10px 20px">Update →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── MANAGE PAGES MODAL ── -->
+    <div id="manage-pages-modal" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:560px">
+        <div class="modal-header">
+          <h3>Manage Project Pages</h3>
+          <button onclick="closeModal('manage-pages-modal')" class="modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:13px;color:var(--stone);margin-bottom:12px">
+            Manually list the exact URLs you want schema generation and sitemap inclusion for. One URL per line. Saving will override the current crawl results.
+          </p>
+          <div class="form-group">
+            <label>URLs to target <span class="req">*</span></label>
+            <textarea id="manage-urls-input" rows="12" placeholder="https://example.com/&#10;https://example.com/rooms&#10;https://example.com/dining"></textarea>
+          </div>
+          <div id="manage-pages-error" class="form-error hidden"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeModal('manage-pages-modal')">Cancel</button>
+          <button class="btn-primary" onclick="submitManualPages()" style="width:auto;padding:10px 20px">Save Page List →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ADD SINGLE PAGE MODAL ── -->
+    <div id="add-single-page-modal" class="modal-overlay hidden">
+      <div class="modal-box" style="max-width:480px">
+        <div class="modal-header">
+          <h3>Add Custom Page</h3>
+          <button onclick="closeModal('add-single-page-modal')" class="modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Page URL <span class="req">*</span></label>
+            <input type="url" id="add-page-url" placeholder="https://example.com/new-page">
+          </div>
+          <div class="form-group">
+            <label>Page Type <span class="req">*</span></label>
+            <select id="add-page-type">
+              <option value="other">other (generic page)</option>
+              <option value="home">home (Main Hotel Page)</option>
+              <option value="rooms">rooms (Room details/list)</option>
+              <option value="dining">dining (Restaurant/Bar)</option>
+              <option value="spa">spa (Wellness/Spa)</option>
+              <option value="faq">faq (Frequently Asked Questions)</option>
+              <option value="contact">contact (Contact page)</option>
+              <option value="offers">offers (Special deals)</option>
+              <option value="gallery">gallery (Photos)</option>
+              <option value="about">about (About us)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Page Title</label>
+            <input type="text" id="add-page-title" placeholder="e.g. Luxury Spa & Wellness">
+          </div>
+          <div id="add-page-error" class="form-error hidden"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" onclick="closeModal('add-single-page-modal')">Cancel</button>
+          <button class="btn-primary" onclick="submitAddSinglePage()" style="width:auto;padding:10px 20px">Add Page →</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── LOADING OVERLAY ───────────────────────────────── -->
+<div id="loading-overlay" class="loading-overlay hidden">
+  <div class="loading-box">
+    <div class="loading-spinner"></div>
+    <div class="loading-msg" id="loading-msg">Processing…</div>
+  </div>
+</div>
+
+<!-- ── TOAST ─────────────────────────────────────────── -->
+<div id="toast" class="toast hidden"></div>
+
+<script src="/static/js/app.js"></script>
+<script src="/static/js/enhancements.js"></script>
+</body>
+</html>
