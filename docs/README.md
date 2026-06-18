@@ -1,3 +1,53 @@
+Hotel Schema Maker
+
+Created by Shahriersaki
+
+Automated JSON-LD structured data and XML sitemap generator for hotel websites — built to help hotels show up correctly in Google's rich results (star ratings, pricing, amenities, and more directly in search).
+
+
+Status: actively in development. The core pipeline — crawling a hotel site, generating schema, and producing a sitemap — works end to end. Some features (the feed-driven knowledge base, trend checking, and a few admin tools) are still being refined. Expect rough edges in places; contributions, feedback, and issue reports are welcome.
+
+
+
+What it does
+
+Point it at a hotel's website and basic details (name, address, amenities, check-in/out times), and it will:
+
+
+Crawl the site to detect pages (Home, Rooms, Dining, Gallery, Local Attractions, Offers, and more)
+Fill in missing details (like map coordinates) by searching online
+Generate JSON-LD schema markup for each page, following schema.org and Google's structured data guidelines
+Build a complete XML sitemap
+Let you feed back validator errors from tools like Google's Rich Results Test, and regenerate corrected schema automatically
+
+
+Quick start
+
+bashgit clone https://github.com/Shahriersaki/hotel-schema-maker.git
+cd hotel-schema-maker
+python -m venv venv
+venv\Scripts\activate          # Windows
+# source venv/bin/activate     # Mac/Linux
+pip install -r requirements.txt
+cp .env.example .env           # then add your own SECRET_KEY and JWT_SECRET
+python app.py
+
+Open http://localhost:5000 and register an account — the first person to register becomes an admin.
+
+Full documentation
+
+Setup details, deployment guides (Render/Railway), the correction workflow, the instruction command reference, and the full API are all in:
+
+📄 docs/README.md
+
+Tech stack
+
+Python (Flask) on the backend, vanilla HTML/CSS/JS on the frontend, SQLite for local storage with optional Supabase support for production.
+
+License
+
+All Rights Reserved. This code is publicly visible for portfolio and demonstration purposes only. Copying, modifying, redistributing, or using this code — in whole or in part — is not permitted without explicit written permission from the author. See LICENSE for full terms.
+
 # Hotel Schema Maker v2 — Complete Documentation
 
 > Generate Google-compliant JSON-LD schema markup and XML sitemaps for hotel websites.
