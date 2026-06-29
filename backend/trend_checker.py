@@ -265,8 +265,9 @@ def build_trend_digest(user_id: int = None) -> dict:
     - Warn about deprecated properties
 
     Priority: user-fed KB entries > fetched trends > built-in defaults
+    Returns both decoupled 'trends_only' & 'fed_only' sub-digests and flat merged keys.
     """
-    digest = {
+    trends_only = {
         "required_properties": [
             "name", "address", "geo", "telephone", "checkinTime", "checkoutTime"
         ],
@@ -275,11 +276,18 @@ def build_trend_digest(user_id: int = None) -> dict:
             "priceRange", "url", "email", "contactPoint"
         ],
         "deprecated_properties": [],
-        "notes": [],
+        "example_schemas": [],
+        "notes": []
+    }
+
+    fed_only = {
+        "required_properties": [],
+        "recommended_properties": [],
+        "deprecated_properties": [],
+        "example_schemas": [],
         "user_guidelines": [],
         "corrections_applied": [],
-        "example_schemas": [],
-        "last_updated": datetime.now(timezone.utc).isoformat()
+        "notes": []
     }
 
     # Layer 1: Fetched trends (non-blocking — use cached if available)
@@ -291,22 +299,28 @@ def build_trend_digest(user_id: int = None) -> dict:
                 req = raw.get("required_properties", [])
                 rec = raw.get("recommended_properties", [])
                 if req:
-                    digest["notes"].append(
+                    trends_only["notes"].append(
                         f"Google requires: {', '.join(req[:5])}"
                     )
+                    for r in req:
+                        if r not in trends_only["required_properties"]:
+                            trends_only["required_properties"].append(r)
                 if rec:
-                    digest["notes"].append(
+                    trends_only["notes"].append(
                         f"Google recommends: {', '.join(rec[:5])}"
                     )
+                    for r in rec:
+                        if r not in trends_only["recommended_properties"]:
+                            trends_only["recommended_properties"].append(r)
             elif snap["source"] == "schema.org changelog":
                 changes = raw.get("hotel_related_changes", [])
                 for change in changes[:2]:
-                    digest["notes"].append(
+                    trends_only["notes"].append(
                         f"schema.org update [{change.get('version','?')}]: "
                         f"{change.get('content','')[:100]}"
                     )
     except Exception as e:
-        digest["notes"].append(f"[Trend fetch warning: {e}]")
+        trends_only["notes"].append(f"[Trend fetch warning: {e}]")
 
     # Layer 2: User-fed knowledge base (highest priority)
     if user_id:
@@ -319,29 +333,29 @@ def build_trend_digest(user_id: int = None) -> dict:
                 title = entry.get("title", "")
 
                 if etype == "guideline":
-                    digest["user_guidelines"].append({
+                    fed_only["user_guidelines"].append({
                         "title": title,
                         "content": content[:500],
                         "source": entry.get("source", "")
                     })
                 elif etype == "validator_error":
-                    digest["corrections_applied"].append({
+                    fed_only["corrections_applied"].append({
                         "title": title,
                         "error": content[:300]
                     })
                 elif etype == "deprecated":
                     props = [p.strip() for p in content.split(",") if p.strip()]
-                    digest["deprecated_properties"].extend(props)
+                    fed_only["deprecated_properties"].extend(props)
                 elif etype == "required":
                     props = [p.strip() for p in content.split(",") if p.strip()]
                     for p in props:
-                        if p not in digest["required_properties"]:
-                            digest["required_properties"].append(p)
+                        if p not in fed_only["required_properties"]:
+                            fed_only["required_properties"].append(p)
                 elif etype == "recommended":
                     props = [p.strip() for p in content.split(",") if p.strip()]
                     for p in props:
-                        if p not in digest["recommended_properties"]:
-                            digest["recommended_properties"].append(p)
+                        if p not in fed_only["recommended_properties"]:
+                            fed_only["recommended_properties"].append(p)
                 elif etype == "example":
                     try:
                         parsed = json.loads(content)
@@ -354,21 +368,33 @@ def build_trend_digest(user_id: int = None) -> dict:
                                     for item in obj["@graph"]:
                                         unpack_examples(item)
                                 elif "@type" in obj:
-                                    digest["example_schemas"].append(obj)
+                                    fed_only["example_schemas"].append(obj)
                         unpack_examples(parsed)
                     except Exception:
                         pass
-
                 elif etype == "news":
-                    digest["notes"].append(f"★ Update: {title} — {content[:150]}")
+                    fed_only["notes"].append(f"★ Update: {title} — {content[:150]}")
 
             if kb_entries:
-                digest["notes"].insert(0,
+                fed_only["notes"].insert(0,
                     f"✓ Applied {len(kb_entries)} user-fed knowledge base entries"
                 )
         except Exception as e:
-            digest["notes"].append(f"[KB load warning: {e}]")
+            fed_only["notes"].append(f"[KB load warning: {e}]")
 
+    # Combine for flat backward compatibility
+    digest = {
+        "required_properties": list(set(trends_only["required_properties"] + fed_only["required_properties"])),
+        "recommended_properties": list(set(trends_only["recommended_properties"] + fed_only["recommended_properties"])),
+        "deprecated_properties": list(set(trends_only["deprecated_properties"] + fed_only["deprecated_properties"])),
+        "example_schemas": trends_only["example_schemas"] + fed_only["example_schemas"],
+        "notes": trends_only["notes"] + fed_only["notes"],
+        "user_guidelines": fed_only["user_guidelines"],
+        "corrections_applied": fed_only["corrections_applied"],
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+        "trends_only": trends_only,
+        "fed_only": fed_only
+    }
     return digest
 
 

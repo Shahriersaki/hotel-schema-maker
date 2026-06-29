@@ -35,6 +35,7 @@ def create_new_project():
     name = (data.get("name") or "").strip()
     website_url = (data.get("website_url") or "").strip()
     hotel_data = data.get("hotel_data") or {}
+    folder_id = data.get("folder_id")
 
     if not name:
         return jsonify({"error": "Project name is required."}), 400
@@ -43,7 +44,7 @@ def create_new_project():
     if not hotel_data.get("name"):
         return jsonify({"error": "Hotel name is required in hotel_data."}), 400
 
-    project = create_project(user_id, name, website_url, hotel_data)
+    project = create_project(user_id, name, website_url, hotel_data, folder_id)
     return jsonify({"project": project}), 201
 
 
@@ -64,7 +65,7 @@ def update_existing_project(project_id):
     user_id = request.current_user["user_id"]
     data = request.get_json(silent=True) or {}
 
-    allowed_fields = ["name", "website_url", "hotel_data"]
+    allowed_fields = ["name", "website_url", "hotel_data", "folder_id"]
     updates = {k: v for k, v in data.items() if k in allowed_fields}
 
     if not updates:
@@ -85,6 +86,43 @@ def delete_existing_project(project_id):
     if not success:
         return jsonify({"error": "Project not found."}), 404
     return jsonify({"message": "Project deleted."})
+
+
+# ─── Folders CRUD ─────────────────────────────────────────────────────────────
+
+@schema_bp.route("/folders", methods=["GET"])
+@require_auth
+def list_folders():
+    user_id = request.current_user["user_id"]
+    from backend.database import get_folders_by_user
+    folders = get_folders_by_user(user_id)
+    return jsonify({"folders": folders})
+
+
+@schema_bp.route("/folders", methods=["POST"])
+@require_auth
+@can_write
+def create_new_folder():
+    user_id = request.current_user["user_id"]
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Folder name is required."}), 400
+    from backend.database import create_folder
+    folder = create_folder(user_id, name)
+    return jsonify({"folder": folder}), 201
+
+
+@schema_bp.route("/folders/<int:folder_id>", methods=["DELETE"])
+@require_auth
+@can_write
+def delete_existing_folder(folder_id):
+    user_id = request.current_user["user_id"]
+    from backend.database import delete_folder
+    success = delete_folder(folder_id, user_id)
+    if not success:
+        return jsonify({"error": "Folder not found or unauthorized."}), 404
+    return jsonify({"message": "Folder deleted."})
 
 
 # ─── Crawl Endpoint ───────────────────────────────────────────────────────────
@@ -281,7 +319,8 @@ def set_project_pages(project_id):
                 "headings": p.get("headings", []),
                 "status_code": p.get("status_code", 200),
                 "depth": p.get("depth", 0),
-                "selected": p.get("selected", True)
+                "selected": p.get("selected", True),
+                "schema_mode": p.get("schema_mode", "both")
             })
         elif isinstance(p, str):
             cleaned_pages.append({
@@ -295,7 +334,8 @@ def set_project_pages(project_id):
                 "headings": [],
                 "status_code": 200,
                 "depth": 0,
-                "selected": True
+                "selected": True,
+                "schema_mode": "both"
             })
 
     # Deduplicate by URL

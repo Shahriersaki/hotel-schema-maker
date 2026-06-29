@@ -818,38 +818,54 @@ def generate_all_schemas(hotel_data: dict, pages: list[dict], user_id: int = Non
     Returns dict keyed by page URL.
     """
     # Build trend digest once (non-blocking — uses cache)
-    trend_notes = []
-    deprecated_props = []
-    example_schemas = []
-    required_props = []
-    guideline_ops = []
     try:
         from backend.trend_checker import build_trend_digest
         digest = build_trend_digest(user_id=user_id)
         trend_notes = digest.get("notes", [])
-        deprecated_props = digest.get("deprecated_properties", [])
-        example_schemas = digest.get("example_schemas", [])
-        required_props = digest.get("required_properties", [])
-
-        # Parse guideline instructions
-        user_guidelines = digest.get("user_guidelines", [])
-        for gl in user_guidelines:
-            content = gl.get("content", "")
-            if content.strip():
-                try:
-                    from backend.regeneration_engine import parse_instructions
-                    ops = parse_instructions(content)
-                    guideline_ops.extend(ops)
-                except Exception as e:
-                    print(f"[Schema] Guideline parse skip: {e}")
-
-        if trend_notes:
-            print(f"[Schema] Trend digest applied: {len(trend_notes)} notes")
     except Exception as e:
-        print(f"[Schema] Trend digest skipped: {e}")
+        print(f"[Schema] Trend digest load failed: {e}")
+        digest = {}
+        trend_notes = []
 
     all_schemas = {}
     for page in pages:
+        schema_mode = page.get("schema_mode", "both")
+
+        required_props = []
+        deprecated_props = []
+        example_schemas = []
+        guideline_ops = []
+
+        # 1. Gather trend-based rules
+        if schema_mode in ("both", "trends"):
+            trends_digest = digest.get("trends_only", {})
+            required_props.extend(trends_digest.get("required_properties", []))
+            deprecated_props.extend(trends_digest.get("deprecated_properties", []))
+            example_schemas.extend(trends_digest.get("example_schemas", []))
+
+        # 2. Gather user-fed rules
+        if schema_mode in ("both", "fed"):
+            fed_digest = digest.get("fed_only", {})
+            required_props.extend(fed_digest.get("required_properties", []))
+            deprecated_props.extend(fed_digest.get("deprecated_properties", []))
+            example_schemas.extend(fed_digest.get("example_schemas", []))
+
+            # Parse guideline instructions
+            user_guidelines = fed_digest.get("user_guidelines", [])
+            for gl in user_guidelines:
+                content = gl.get("content", "")
+                if content.strip():
+                    try:
+                        from backend.regeneration_engine import parse_instructions
+                        ops = parse_instructions(content)
+                        guideline_ops.extend(ops)
+                    except Exception as e:
+                        print(f"[Schema] Guideline parse skip: {e}")
+
+        # Deduplicate
+        required_props = list(set(required_props))
+        deprecated_props = list(set(deprecated_props))
+
         result = generate_schema_for_page(hotel_data, page)
         result["trend_notes"] = trend_notes
 
@@ -891,8 +907,19 @@ def generate_all_schemas(hotel_data: dict, pages: list[dict], user_id: int = Non
             except Exception as e:
                 print(f"[Schema] Guideline apply skip: {e}")
 
+        # 3. Align with example schemas
+        if example_schemas:
+            aligned_schemas = []
+            for schema in result.get("schemas", []):
+                matched_example = None
+                for ex in example_schemas:
+                    if ex.get("@type") == schema.get("@type"):
+                        matched_example = ex
+                        break
                 if matched_example:
-                    allowed_extra = _get_guideline_target_keys(guideline_ops)
+                    allowed_extra = set()
+                    allowed_extra.update(required_props)
+                    allowed_extra.update(_get_guideline_target_keys(guideline_ops))
                     aligned_schema = align_with_example_structure(
                         schema, matched_example, hotel_data, allowed_extra_keys=allowed_extra
                     )

@@ -75,12 +75,13 @@ def require_role(*roles):
 
 
 def require_admin(f):
-    """Shorthand: admin-only route. Use after @require_auth."""
+    """Shorthand: admin/manager-only route. Use after @require_auth."""
     @wraps(f)
     def decorated(*args, **kwargs):
         role = getattr(request, "current_user", {}).get("role", "viewer")
-        if role != "admin":
-            return jsonify({"error": "Admin access required."}), 403
+        email = getattr(request, "current_user", {}).get("email", "")
+        if role not in ("admin", "manager") and email != "shahrier@razibmarketing.net":
+            return jsonify({"error": "Admin or Manager access required."}), 403
         return f(*args, **kwargs)
     return decorated
 
@@ -181,6 +182,21 @@ def me():
     if not user:
         return jsonify({"error": "User not found."}), 404
     return jsonify({"user": _safe_user(user)})
+
+
+@auth_bp.route("/me/profile", methods=["PUT"])
+@require_auth
+def update_my_profile():
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Name is required."}), 400
+    user_id = request.current_user["user_id"]
+    success = update_user(user_id, {"name": name})
+    if not success:
+        return jsonify({"error": "Failed to update profile name."}), 500
+    log_action(user_id, "update_profile", "user", str(user_id), f"Name updated to {name}", request.remote_addr)
+    return jsonify({"message": "Profile updated successfully.", "name": name})
 
 
 @auth_bp.route("/me/password", methods=["PUT"])

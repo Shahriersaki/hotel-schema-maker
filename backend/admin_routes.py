@@ -7,9 +7,8 @@ from flask import Blueprint, request, jsonify
 from backend.auth import require_auth, require_admin
 from backend.database import (
     get_all_users, update_user, change_password, get_audit_log,
-    get_db_path, log_action, VALID_ROLES
+    get_db_path, log_action, VALID_ROLES, db
 )
-import sqlite3
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -18,15 +17,13 @@ def _db_stats() -> dict:
     """Quick counts from the DB."""
     try:
         stats = {}
-        with sqlite3.connect(get_db_path()) as conn:
-            cursor = conn.cursor()
-            for table in ("users", "projects", "knowledge_base", "schema_corrections",
-                          "trend_snapshots", "audit_log"):
-                try:
-                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                    stats[table] = cursor.fetchone()[0]
-                except Exception:
-                    stats[table] = 0
+        for table in ("users", "projects", "knowledge_base", "schema_corrections",
+                      "trend_snapshots", "audit_log", "folders"):
+            try:
+                rows, _, _ = db.execute(f"SELECT COUNT(*) as cnt FROM {table}")
+                stats[table] = rows[0]["cnt"] if rows else 0
+            except Exception:
+                stats[table] = 0
         return stats
     except Exception:
         return {}
