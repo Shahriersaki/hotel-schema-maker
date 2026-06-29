@@ -1,53 +1,3 @@
-Hotel Schema Maker
-
-Created by Shahriersaki
-
-Automated JSON-LD structured data and XML sitemap generator for hotel websites — built to help hotels show up correctly in Google's rich results (star ratings, pricing, amenities, and more directly in search).
-
-
-Status: actively in development. The core pipeline — crawling a hotel site, generating schema, and producing a sitemap — works end to end. Some features (the feed-driven knowledge base, trend checking, and a few admin tools) are still being refined. Expect rough edges in places; contributions, feedback, and issue reports are welcome.
-
-
-
-What it does
-
-Point it at a hotel's website and basic details (name, address, amenities, check-in/out times), and it will:
-
-
-Crawl the site to detect pages (Home, Rooms, Dining, Gallery, Local Attractions, Offers, and more)
-Fill in missing details (like map coordinates) by searching online
-Generate JSON-LD schema markup for each page, following schema.org and Google's structured data guidelines
-Build a complete XML sitemap
-Let you feed back validator errors from tools like Google's Rich Results Test, and regenerate corrected schema automatically
-
-
-Quick start
-
-bashgit clone https://github.com/Shahriersaki/hotel-schema-maker.git
-cd hotel-schema-maker
-python -m venv venv
-venv\Scripts\activate          # Windows
-# source venv/bin/activate     # Mac/Linux
-pip install -r requirements.txt
-cp .env.example .env           # then add your own SECRET_KEY and JWT_SECRET
-python app.py
-
-Open http://localhost:5000 and register an account — the first person to register becomes an admin.
-
-Full documentation
-
-Setup details, deployment guides (Render/Railway), the correction workflow, the instruction command reference, and the full API are all in:
-
-📄 docs/README.md
-
-Tech stack
-
-Python (Flask) on the backend, vanilla HTML/CSS/JS on the frontend, SQLite for local storage with optional Supabase support for production.
-
-License
-
-All Rights Reserved. This code is publicly visible for portfolio and demonstration purposes only. Copying, modifying, redistributing, or using this code — in whole or in part — is not permitted without explicit written permission from the author. See LICENSE for full terms.
-
 # Hotel Schema Maker v2 — Complete Documentation
 
 > Generate Google-compliant JSON-LD schema markup and XML sitemaps for hotel websites.
@@ -182,31 +132,36 @@ railway variables set SECRET_KEY=xxx JWT_SECRET=yyy FLASK_ENV=production
 
 ### Persistent Database
 
-SQLite works out of the box. For production with multiple dynos or persistent storage:
+The tool supports both local development SQLite and production-grade Turso/LibSQL database connections.
 
-| Option | Free Tier | Setup |
-|--------|-----------|-------|
-| **Supabase** | 500 MB PostgreSQL | Set `SUPABASE_URL` + `SUPABASE_KEY` |
-| **Fly.io volumes** | 3 GB persistent | Mount `/data`, set `SQLITE_PATH=/data/hotel_schema.db` |
-| **PlanetScale** | 5 GB MySQL | Set `DATABASE_URL=mysql+pymysql://...` |
+- **Local Development**: Works out of the box using a local SQLite database file `hotel_schema.db`.
+- **Turso / Remote LibSQL**: Configure the following environment variables to use a cloud LibSQL database (e.g. Turso):
+  - `DATABASE_URL`: Set to your remote endpoint, e.g. `libsql://your-db-subdomain.turso.io`.
+  - `TURSO_DB_TOKEN`: Set to your database authentication token.
 
 ---
 
 ## User Roles & Access Control
 
+The application implements a multi-user Role-Based Access Control (RBAC) model:
+
 | Role | Who | Permissions |
 |------|-----|-------------|
 | **admin** | First registered user + anyone promoted | Full access: user management, audit log, all write operations |
-| **contributor** | Regular users | Create/edit projects, manage own KB, submit + fix corrections |
-| **viewer** | Read-only guests | Browse projects and schemas, download exports — no editing |
+| **manager** | Email `shahrier@razibmarketing.net` (Auto-promoted) + anyone promoted | Full admin privileges: manage users, view all activity logs, run write operations |
+| **contributor** | Regular team members | Create and edit their own projects, feed KB rules, and run corrections |
+| **viewer** | Read-only guests | Browse projects/schemas, download sitemaps and schema bundles — no editing |
 
-### Role Assignment
-- **First user** to register is automatically admin
-- Admins can change any user's role via **Admin → User Management**
-- Users cannot change their own role
+### Role Assignment & Login
+- **Login Routes**: Authentication is handled via URL routing. Navigating to `/login`, `/register`, or `/logout` automatically updates user sessions and updates the URL pathname.
+- **Auto-Promotion**:
+  - The first registered user is automatically promoted to **admin**.
+  - A user registering with email `shahrier@razibmarketing.net` is automatically promoted to **manager**.
+- **Admin/Manager Actions**: Admins and managers can assign roles and manage accounts under **User Management** menu. Users cannot change their own roles.
+- **Data Isolation**: Regular contributors and viewers can only manage or view their own projects and knowledge base entries. Admins/managers can see all data across the platform.
 
 ### Role in API
-The JWT token payload includes `"role"`. All API responses include `403` with a descriptive message if the role is insufficient.
+All API endpoints verify JWT claims. If the user does not have sufficient role level or data ownership, the API responds with a `403 Forbidden` status.
 
 ### Inviting Users
 Share the deployed URL — users self-register. The admin then upgrades their role if needed.
