@@ -1,13 +1,13 @@
 """
-Database module - supports SQLite (local dev) and Turso/LibSQL.
+Database module - supports SQLite (local dev) and Turso/LibSQL via HTTP API.
 """
 
 import os
 import sys
 import sqlite3
 import json
+import requests
 import bcrypt
-import libsql_client
 from datetime import datetime, timezone
 
 
@@ -37,25 +37,100 @@ class DBWrapper:
     def __init__(self):
         self._url = None
         self._token = None
-        self._is_libsql = False
+        self._is_turso = False
+        self._http_url = None
         self.refresh_config()
 
     def refresh_config(self):
         self._url = get_db_url()
         self._token = os.environ.get("TURSO_DB_TOKEN", "")
-        self._is_libsql = self._url.startswith(("libsql://", "http://", "https://"))
+        self._is_turso = self._url.startswith(("libsql://", "http://", "https://"))
+        if self._is_turso:
+            # Convert libsql:// to https:// for HTTP API
+            http_url = self._url.replace("libsql://", "https://")
+            # Strip trailing slash
+            self._http_url = http_url.rstrip("/")
 
-    def execute(self, sql: str, params: list = None) -> tuple[list, int, int]:
+    def _turso_execute(self, sql: str, params: list) -> tuple:
+        """Execute SQL against Turso via its HTTP API (no Rust libs needed)."""
+        # Build the request payload using Turso's pipeline API
+        # Named params use :name syntax, positional use ?
+        # We convert positional params to the Turso format
+        args = []
+        for p in params:
+            if p is None:
+                args.append({"type": "null"})
+            elif isinstance(p, bool):
+                args.append({"type": "integer", "value": str(int(p))})
+            elif isinstance(p, int):
+                args.append({"type": "integer", "value": str(p)})
+            elif isinstance(p, float):
+                args.append({"type": "float", "value": str(p)})
+            else:
+                args.append({"type": "text", "value": str(p)})
+
+        payload = {
+            "requests": [
+                {
+                    "type": "execute",
+                    "stmt": {
+                        "sql": sql,
+                        "args": args
+                    }
+                },
+                {"type": "close"}
+            ]
+        }
+
+        headers = {
+            "Authorization": f"Bearer {self._token}",
+            "Content-Type": "application/json"
+        }
+
+        resp = requests.post(
+            f"{self._http_url}/v2/pipeline",
+            headers=headers,
+            json=payload,
+            timeout=15
+        )
+
+        if not resp.ok:
+            raise RuntimeError(f"Turso HTTP error {resp.status_code}: {resp.text[:300]}")
+
+        data = resp.json()
+        result = data["results"][0]
+
+        if result.get("type") == "error":
+            raise RuntimeError(f"Turso SQL error: {result.get('error', {}).get('message', 'unknown')}")
+
+        inner = result.get("response", {}).get("result", {})
+        cols = [c["name"] for c in inner.get("cols", [])]
+        rows_raw = inner.get("rows", [])
+        rows = []
+        for row in rows_raw:
+            record = {}
+            for i, col in enumerate(cols):
+                cell = row[i]
+                cell_type = cell.get("type")
+                cell_val = cell.get("value")
+                if cell_type == "null":
+                    record[col] = None
+                elif cell_type == "integer":
+                    record[col] = int(cell_val)
+                elif cell_type == "float":
+                    record[col] = float(cell_val)
+                else:
+                    record[col] = cell_val
+            rows.append(record)
+
+        last_insert_rowid = int(inner.get("last_insert_rowid") or 0)
+        rows_affected = int(inner.get("affected_row_count") or 0)
+        return rows, last_insert_rowid, rows_affected
+
+    def execute(self, sql: str, params: list = None) -> tuple:
         params = params or []
-        if self._is_libsql:
-            client = libsql_client.create_client_sync(self._url, auth_token=self._token)
-            try:
-                res = client.execute(sql, params)
-                columns = res.columns
-                rows = [{col: val for col, val in zip(columns, row)} for row in res.rows]
-                return rows, res.last_insert_rowid or 0, res.rows_affected or 0
-            finally:
-                client.close()
+        if self._is_turso:
+            return self._turso_execute(sql, params)
         else:
             path = self._url.replace("sqlite:///", "")
             conn = sqlite3.connect(path)
@@ -71,6 +146,7 @@ class DBWrapper:
                 return rows_dict, last_id, affected
             finally:
                 conn.close()
+
 
 
 db = DBWrapper()
