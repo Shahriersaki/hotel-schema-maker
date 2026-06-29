@@ -87,11 +87,11 @@ def require_admin(f):
 
 
 def can_write(f):
-    """Require admin or contributor (not viewer)."""
+    """Require admin, manager, or contributor (not viewer)."""
     @wraps(f)
     def decorated(*args, **kwargs):
         role = getattr(request, "current_user", {}).get("role", "viewer")
-        if role not in ("admin", "contributor"):
+        if role not in ("admin", "manager", "contributor"):
             return jsonify({"error": "Write access required. Viewers have read-only access."}), 403
         return f(*args, **kwargs)
     return decorated
@@ -302,3 +302,32 @@ def admin_audit_log():
         user_id_val = None
     logs = get_audit_log(limit=limit, user_id=user_id_val)
     return jsonify({"logs": logs, "count": len(logs)})
+
+
+@auth_bp.route("/bootstrap-admin", methods=["POST"])
+def bootstrap_admin():
+    """
+    One-time emergency endpoint to promote a user to admin.
+    Requires ADMIN_BOOTSTRAP_KEY env var to be set and matched.
+    Disable by removing the env var after use.
+    """
+    bootstrap_key = os.environ.get("ADMIN_BOOTSTRAP_KEY", "")
+    if not bootstrap_key:
+        return jsonify({"error": "Bootstrap not enabled on this server."}), 403
+
+    data = request.get_json(silent=True) or {}
+    provided_key = data.get("key", "")
+    email = (data.get("email") or "").strip().lower()
+
+    if provided_key != bootstrap_key:
+        return jsonify({"error": "Invalid bootstrap key."}), 403
+    if not email:
+        return jsonify({"error": "Email is required."}), 400
+
+    user = get_user_by_email(email)
+    if not user:
+        return jsonify({"error": "User not found."}), 404
+
+    update_user(user["id"], {"role": "admin"})
+    return jsonify({"message": f"User {email} promoted to admin successfully."})
+
