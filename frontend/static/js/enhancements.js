@@ -53,9 +53,10 @@ window.toast = toast;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function applyRoleUI(role) {
-  // Show admin nav items
+  // Show admin/manager nav items
+  const isAdminOrManager = (role === "admin" || role === "manager");
   document.querySelectorAll(".admin-only").forEach(el => {
-    el.classList.toggle("hidden", role !== "admin");
+    el.classList.toggle("hidden", !isAdminOrManager);
   });
 
   // Role badge in sidebar
@@ -457,6 +458,7 @@ function renderAdminUserTable(users) {
                 onchange="adminUpdateUser(${u.id}, {role: this.value})"
                 ${isMe ? "disabled" : ""}>
                 <option value="admin"       ${u.role==="admin"       ? "selected" : ""}>admin</option>
+                <option value="manager"     ${u.role==="manager"     ? "selected" : ""}>manager</option>
                 <option value="contributor" ${u.role==="contributor" ? "selected" : ""}>contributor</option>
                 <option value="viewer"      ${u.role==="viewer"      ? "selected" : ""}>viewer</option>
               </select>
@@ -612,11 +614,32 @@ function log_audit(action) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function openPasswordModal() {
+  document.getElementById("profile-name-input").value = currentUser.name || "";
   document.getElementById("pw-current").value = "";
   document.getElementById("pw-new").value = "";
   document.getElementById("pw-confirm").value = "";
   document.getElementById("pw-error").classList.add("hidden");
   openModal("password-modal");
+}
+
+async function submitNameUpdate() {
+  const errorEl = document.getElementById("pw-error");
+  errorEl.classList.add("hidden");
+  const name = document.getElementById("profile-name-input").value.trim();
+  if (!name) {
+    showError(errorEl, "Name cannot be empty.");
+    return;
+  }
+
+  try {
+    const res = await apiFetch("/api/auth/me/profile", "PUT", { name });
+    currentUser.name = name;
+    document.getElementById("user-name").textContent = name;
+    document.getElementById("user-avatar").textContent = name[0].toUpperCase();
+    toast("Profile name updated successfully!", "success");
+  } catch (err) {
+    showError(errorEl, err.message || "Failed to update name.");
+  }
 }
 
 async function submitPasswordChange() {
@@ -731,41 +754,69 @@ function renderDashboard(projects) {
   const noProj = document.getElementById("no-projects");
   if (!grid) return;
 
-  if (!projects.length) {
+  // Filter projects by search query
+  let filtered = projects;
+  if (searchQuery) {
+    filtered = projects.filter(p => p.name.toLowerCase().includes(searchQuery));
+  }
+
+  if (!filtered.length) {
     grid.innerHTML = "";
     if (noProj) noProj.classList.remove("hidden");
     return;
   }
   if (noProj) noProj.classList.add("hidden");
 
-  grid.innerHTML = projects.map(p => {
-    const pagesCount   = (p.pages_found || []).length;
-    const schemasCount = Object.keys(p.schemas_generated || {}).length;
-    const hasSitemap   = !!p.sitemap_xml;
-    const dateStr      = new Date(p.created_at).toLocaleDateString();
+  // Group projects by folder
+  const grouped = {};
+  filtered.forEach(p => {
+    const folder = p.folder_name || "Uncategorized";
+    if (!grouped[folder]) grouped[folder] = [];
+    grouped[folder].push(p);
+  });
+
+  // Render grouped HTML with nested grid layout for card containers
+  grid.innerHTML = Object.entries(grouped).map(([folderName, projs]) => {
+    const cardsHtml = projs.map(p => {
+      const pagesCount   = (p.pages_found || []).length;
+      const schemasCount = Object.keys(p.schemas_generated || {}).length;
+      const hasSitemap   = !!p.sitemap_xml;
+      const dateStr      = new Date(p.created_at).toLocaleDateString();
+
+      return `
+      <div class="project-card" onclick="openProject(${p.id})">
+        <div class="card-badge">${dateStr}</div>
+        <div class="card-title">${esc(p.name)}</div>
+        <div class="card-url">${esc(p.website_url)}</div>
+        <div class="card-stats">
+          <div class="card-stat">
+            <div class="card-stat-val">${pagesCount}</div>
+            <div class="card-stat-label">Pages</div>
+          </div>
+          <div class="card-stat">
+            <div class="card-stat-val">${schemasCount}</div>
+            <div class="card-stat-label">Schemas</div>
+          </div>
+          <div class="card-stat">
+            <div class="card-stat-val">${hasSitemap ? "✓" : "—"}</div>
+            <div class="card-stat-label">Sitemap</div>
+          </div>
+        </div>
+        <div class="card-actions" onclick="event.stopPropagation()">
+          <button class="btn-xs" onclick="openProject(${p.id})">Open →</button>
+          ${schemasCount ? `<button class="btn-xs" onclick="quickExport(${p.id})">⬇ Export</button>` : ""}
+        </div>
+      </div>`;
+    }).join("");
 
     return `
-    <div class="project-card" onclick="openProject(${p.id})">
-      <div class="card-badge">${dateStr}</div>
-      <div class="card-title">${esc(p.name)}</div>
-      <div class="card-url">${esc(p.website_url)}</div>
-      <div class="card-stats">
-        <div class="card-stat">
-          <div class="card-stat-val">${pagesCount}</div>
-          <div class="card-stat-label">Pages</div>
-        </div>
-        <div class="card-stat">
-          <div class="card-stat-val">${schemasCount}</div>
-          <div class="card-stat-label">Schemas</div>
-        </div>
-        <div class="card-stat">
-          <div class="card-stat-val">${hasSitemap ? "✓" : "—"}</div>
-          <div class="card-stat-label">Sitemap</div>
-        </div>
+    <div class="folder-group" style="width:100%; margin-bottom:32px;">
+      <div class="folder-group-title" style="font-size:15px; font-weight:600; color:var(--ink-2); margin-bottom:14px; display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--cream-3); padding-bottom:8px;">
+        <span>📁</span> ${esc(folderName)}
+        <span style="font-size:12px; color:var(--stone); font-weight:normal;">(${projs.length} project${projs.length !== 1 ? 's' : ''})</span>
       </div>
-      <div class="card-actions" onclick="event.stopPropagation()">
-        <button class="btn-xs" onclick="openProject(${p.id})">Open →</button>
-        ${schemasCount ? `<button class="btn-xs" onclick="quickExport(${p.id})">⬇ Export</button>` : ""}
+      <div class="projects-grid-inner" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:20px;">
+        ${cardsHtml}
       </div>
     </div>`;
   }).join("");

@@ -9,13 +9,16 @@ let token = localStorage.getItem("hsm_token") || null;
 let currentUser = null;
 let currentProjectId = null;
 let projectsCache = [];
+let foldersCache = [];
+let searchQuery = "";
 
 // ─── Init ─────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
+  window.addEventListener("popstate", handleRouting);
   if (token) {
     verifyAndLoadApp();
   } else {
-    showScreen("auth");
+    handleRouting();
   }
 });
 
@@ -35,13 +38,60 @@ async function verifyAndLoadApp() {
 
 async function loadApp() {
   // Set user info in sidebar
-  document.getElementById("user-name").textContent = currentUser.email?.split("@")[0] || "User";
+  document.getElementById("user-name").textContent = currentUser.name || currentUser.email?.split("@")[0] || "User";
   document.getElementById("user-email").textContent = currentUser.email || "";
   document.getElementById("user-avatar").textContent =
-    (currentUser.email || "U")[0].toUpperCase();
+    (currentUser.name || currentUser.email || "U")[0].toUpperCase();
 
   showScreen("app");
-  await loadDashboard();
+  if (typeof applyRoleUI === "function") {
+    applyRoleUI(currentUser.role);
+  }
+  handleRouting();
+}
+
+async function handleRouting() {
+  const path = window.location.pathname;
+  
+  if (path === "/logout") {
+    logout();
+    return;
+  }
+
+  if (!token) {
+    showScreen("auth");
+    if (path === "/register") {
+      switchAuth("register");
+    } else {
+      switchAuth("login");
+      if (path !== "/login") {
+        history.replaceState(null, "", "/login");
+      }
+    }
+  } else {
+    // We are authenticated and currentUser is loaded.
+    if (path === "/login" || path === "/register" || path === "/logout" || path === "/") {
+      history.replaceState(null, "", "/dashboard");
+      switchView("dashboard");
+    } else if (path === "/project") {
+      const searchParams = new URLSearchParams(window.location.search);
+      const projId = searchParams.get("id");
+      if (projId) {
+        openProject(parseInt(projId));
+      } else {
+        history.replaceState(null, "", "/dashboard");
+        switchView("dashboard");
+      }
+    } else {
+      const viewName = path.substring(1); // e.g., "dashboard", "feed", "trends", "admin", "new-project"
+      if (["dashboard", "new-project", "feed", "trends", "admin"].includes(viewName)) {
+        switchView(viewName);
+      } else {
+        history.replaceState(null, "", "/dashboard");
+        switchView("dashboard");
+      }
+    }
+  }
 }
 
 // ─── Auth Handlers ────────────────────────────────────
@@ -103,6 +153,10 @@ function logout() {
   currentUser = null;
   localStorage.removeItem("hsm_token");
   showScreen("auth");
+  switchAuth("login");
+  if (window.location.pathname !== "/login") {
+    history.pushState(null, "", "/login");
+  }
 }
 
 function switchAuth(panel) {
@@ -111,11 +165,25 @@ function switchAuth(panel) {
   // Clear errors
   document.getElementById("login-error").classList.add("hidden");
   document.getElementById("reg-error").classList.add("hidden");
+
+  const expectedPath = `/${panel}`;
+  if (window.location.pathname !== expectedPath) {
+    history.pushState(null, "", expectedPath);
+  }
 }
 
 // ─── Dashboard ────────────────────────────────────────
 async function loadDashboard() {
   try {
+    // Fetch folders first
+    try {
+      const folderRes = await apiFetch("/api/schema/folders");
+      foldersCache = folderRes.folders || [];
+      populateFolderDropdowns();
+    } catch (e) {
+      console.warn("Could not load folders:", e);
+    }
+
     const res = await apiFetch("/api/schema/projects");
     projectsCache = res.projects || [];
     renderDashboard(projectsCache);
@@ -125,39 +193,81 @@ async function loadDashboard() {
   }
 }
 
+function onSearchInput() {
+  const val = document.getElementById("dashboard-search")?.value || "";
+  searchQuery = val.trim().toLowerCase();
+  renderDashboard(projectsCache);
+}
+
+function populateFolderDropdowns() {
+  const select = document.getElementById("proj-folder");
+  if (select) {
+    select.innerHTML = '<option value="">Uncategorized</option>' +
+      foldersCache.map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join("");
+  }
+}
+
 function renderDashboard(projects) {
   const grid   = document.getElementById("projects-grid");
   const noProj = document.getElementById("no-projects");
 
-  if (!projects.length) {
+  // Filter projects by search query
+  let filtered = projects;
+  if (searchQuery) {
+    filtered = projects.filter(p => p.name.toLowerCase().includes(searchQuery));
+  }
+
+  if (!filtered.length) {
     grid.innerHTML = "";
     noProj.classList.remove("hidden");
     return;
   }
-
   noProj.classList.add("hidden");
-  grid.innerHTML = projects.map(p => {
-    const pagesCount   = (p.pages_found || []).length;
-    const schemasCount = Object.keys(p.schemas_generated || {}).length;
-    const hasSitemap   = !!p.sitemap_xml;
+
+  // Group projects by folder
+  const grouped = {};
+  filtered.forEach(p => {
+    const folder = p.folder_name || "Uncategorized";
+    if (!grouped[folder]) grouped[folder] = [];
+    grouped[folder].push(p);
+  });
+
+  // Render grouped HTML with nested grid layout for card containers
+  grid.innerHTML = Object.entries(grouped).map(([folderName, projs]) => {
+    const cardsHtml = projs.map(p => {
+      const pagesCount   = (p.pages_found || []).length;
+      const schemasCount = Object.keys(p.schemas_generated || {}).length;
+      const hasSitemap   = !!p.sitemap_xml;
+      return `
+      <div class="project-card" onclick="openProject(${p.id})">
+        <div class="card-badge">${new Date(p.created_at).toLocaleDateString()}</div>
+        <div class="card-title">${esc(p.name)}</div>
+        <div class="card-url">${esc(p.website_url)}</div>
+        <div class="card-stats">
+          <div class="card-stat">
+            <div class="card-stat-val">${pagesCount}</div>
+            <div class="card-stat-label">Pages</div>
+          </div>
+          <div class="card-stat">
+            <div class="card-stat-val">${schemasCount}</div>
+            <div class="card-stat-label">Schemas</div>
+          </div>
+          <div class="card-stat">
+            <div class="card-stat-val">${hasSitemap ? "✓" : "—"}</div>
+            <div class="card-stat-label">Sitemap</div>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+
     return `
-    <div class="project-card" onclick="openProject(${p.id})">
-      <div class="card-badge">${new Date(p.created_at).toLocaleDateString()}</div>
-      <div class="card-title">${esc(p.name)}</div>
-      <div class="card-url">${esc(p.website_url)}</div>
-      <div class="card-stats">
-        <div class="card-stat">
-          <div class="card-stat-val">${pagesCount}</div>
-          <div class="card-stat-label">Pages</div>
-        </div>
-        <div class="card-stat">
-          <div class="card-stat-val">${schemasCount}</div>
-          <div class="card-stat-label">Schemas</div>
-        </div>
-        <div class="card-stat">
-          <div class="card-stat-val">${hasSitemap ? "✓" : "—"}</div>
-          <div class="card-stat-label">Sitemap</div>
-        </div>
+    <div class="folder-group" style="width:100%; margin-bottom:32px;">
+      <div class="folder-group-title" style="font-size:15px; font-weight:600; color:var(--ink-2); margin-bottom:14px; display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--cream-3); padding-bottom:8px;">
+        <span>📁</span> ${esc(folderName)}
+        <span style="font-size:12px; color:var(--stone); font-weight:normal;">(${projs.length} project${projs.length !== 1 ? 's' : ''})</span>
+      </div>
+      <div class="projects-grid-inner" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:20px;">
+        ${cardsHtml}
       </div>
     </div>`;
   }).join("");
@@ -178,6 +288,8 @@ async function createProject() {
 
   const name = document.getElementById("proj-name").value.trim();
   const websiteUrl = document.getElementById("proj-url").value.trim();
+  const folderEl = document.getElementById("proj-folder");
+  const folderId = folderEl && folderEl.value ? parseInt(folderEl.value) : null;
   const hotelName = document.getElementById("hotel-name").value.trim();
   const street = document.getElementById("addr-street").value.trim();
   const city = document.getElementById("addr-city").value.trim();
@@ -214,7 +326,7 @@ async function createProject() {
   showLoading("Creating project…");
   try {
     const res = await apiFetch("/api/schema/projects", "POST", {
-      name, website_url: websiteUrl, hotel_data: hotelData
+      name, website_url: websiteUrl, hotel_data: hotelData, folder_id: folderId
     });
     hideLoading();
     toast("Project created!", "success");
@@ -258,6 +370,12 @@ async function openProject(projectId) {
 
   // Restore pipeline state from project data
   restorePipelineState(project);
+
+  const expectedPath = "/project";
+  const searchParams = new URLSearchParams(window.location.search);
+  if (window.location.pathname !== expectedPath || searchParams.get("id") !== String(projectId)) {
+    history.pushState(null, "", `/project?id=${projectId}`);
+  }
 
   switchView("project");
 }
@@ -456,11 +574,17 @@ function renderPagesSection(pages) {
 
   document.getElementById("pages-list").innerHTML = pages.map(p => {
     const isSelected = p.selected !== false;
+    const mode = p.schema_mode || "both";
     return `
     <div class="page-item" style="display:flex;align-items:center;gap:10px">
       <input type="checkbox" class="page-select-checkbox" ${isSelected ? 'checked' : ''} onchange="togglePageSelection('${escJs(p.url)}', this.checked)" style="width:16px;height:16px;cursor:pointer">
       <span class="page-type-badge" style="background:${typeColors[p.page_type] || '#888'}22;color:${typeColors[p.page_type] || '#888'}">${p.page_type}</span>
       <span class="page-url" title="${esc(p.url)}" style="flex:1">${esc(p.url.replace(/^https?:\/\/[^\/]+/, ''))  || '/'}</span>
+      <select class="schema-mode-select" onchange="changePageSchemaMode('${escJs(p.url)}', this.value)" style="padding:4px 8px;border-radius:4px;border:1px solid var(--cream-3);background:#fff;font-size:11px;color:var(--ink-2);outline:none;cursor:pointer">
+        <option value="both" ${mode === 'both' ? 'selected' : ''}>Follow Both</option>
+        <option value="trends" ${mode === 'trends' ? 'selected' : ''}>Follow Trends</option>
+        <option value="fed" ${mode === 'fed' ? 'selected' : ''}>Follow Fed</option>
+      </select>
     </div>`;
   }).join("");
 }
@@ -596,6 +720,14 @@ function switchView(viewName) {
   if (viewName === "dashboard") {
     loadDashboard();
   }
+
+  // Update URL pathname history state
+  if (viewName !== "project") {
+    const expectedPath = `/${viewName}`;
+    if (window.location.pathname !== expectedPath) {
+      history.pushState(null, "", expectedPath);
+    }
+  }
 }
 
 function showScreen(name) {
@@ -691,6 +823,53 @@ document.addEventListener("keydown", e => {
 //  FEED SYSTEM
 // ═══════════════════════════════════════════════════════
 
+let currentFeedTab = "all";
+function switchFeedTab(tab) {
+  currentFeedTab = tab;
+  document.querySelectorAll(".feed-tab-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.id === `feed-tab-${tab}`);
+  });
+  loadKBEntries();
+}
+
+function generateSchemaSummary(contentStr) {
+  try {
+    const obj = JSON.parse(contentStr);
+    const summaries = [];
+    
+    const traverse = (val) => {
+      if (typeof val !== 'object' || val === null) return;
+      if (Array.isArray(val)) {
+        val.forEach(traverse);
+      } else {
+        if (val["@type"]) {
+          const type = val["@type"];
+          const keys = Object.keys(val).filter(k => !k.startsWith("@"));
+          summaries.push({ type, keys });
+        }
+        Object.values(val).forEach(traverse);
+      }
+    };
+    
+    traverse(obj);
+    if (summaries.length === 0) return "";
+    
+    return `
+      <div class="schema-structure-summary">
+        <div class="summary-title">Schema Structure Summary:</div>
+        ${summaries.map(s => `
+          <div class="summary-item">
+            <span class="summary-type-badge">${esc(s.type)}</span> 
+            <span class="summary-keys">${esc(s.keys.join(", "))}</span>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  } catch (e) {
+    return "";
+  }
+}
+
 // ─── Knowledge Base ───────────────────────────────────
 async function loadKBEntries() {
   const filter = document.getElementById("kb-filter")?.value || "";
@@ -698,7 +877,33 @@ async function loadKBEntries() {
 
   try {
     const res = await apiFetch(url);
-    renderKBEntries(res.entries);
+    let entries = res.entries || [];
+    
+    if (!filter) {
+      if (currentFeedTab === "rules") {
+        entries = entries.filter(e => ["guideline", "recommended", "required", "deprecated"].includes(e.entry_type));
+      } else if (currentFeedTab === "examples") {
+        entries = entries.filter(e => e.entry_type === "example");
+      } else if (currentFeedTab === "errors") {
+        entries = entries.filter(e => e.entry_type === "validator_error");
+      } else if (currentFeedTab === "news") {
+        entries = entries.filter(e => ["news", "note"].includes(e.entry_type));
+      }
+    } else {
+      const typeToTab = {
+        guideline: "rules", recommended: "rules", required: "rules", deprecated: "rules",
+        example: "examples",
+        validator_error: "errors",
+        news: "news", note: "news"
+      };
+      const activeTab = typeToTab[filter] || "all";
+      document.querySelectorAll(".feed-tab-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.id === `feed-tab-${activeTab}`);
+      });
+      currentFeedTab = activeTab;
+    }
+    
+    renderKBEntries(entries);
   } catch (err) {
     toast("Failed to load knowledge base: " + err.message, "error");
   }
@@ -724,6 +929,7 @@ function renderKBEntries(entries) {
       <div class="kb-entry-body">
         <div class="kb-entry-title">${esc(e.title)}</div>
         <div class="kb-entry-content">${esc(e.content)}</div>
+        ${e.entry_type === 'example' ? generateSchemaSummary(e.content) : ""}
         ${e.source ? `<div class="kb-entry-source">↗ ${esc(e.source)}</div>` : ""}
       </div>
       <button class="kb-entry-del" onclick="deleteKBEntry(${e.id})" title="Remove">✕</button>
@@ -850,25 +1056,47 @@ async function loadTrendDigest() {
     panel.innerHTML = `
       <div class="digest-grid">
         <div>
-          <div class="digest-col-title">Required Properties</div>
+          <div class="digest-col-title" style="display:flex;align-items:center;gap:6px;color:var(--green)">
+            <span>✓</span> Required Properties
+          </div>
           <div class="digest-prop-list">
-            ${(d.required_properties || []).map(p => `<div class="digest-prop">${esc(p)}</div>`).join("")}
+            ${(d.required_properties || []).map(p => `
+              <div class="digest-prop" style="background:rgba(45,106,79,0.1);color:var(--green);border-radius:4px;padding:3px 8px;margin-bottom:4px;font-family:var(--mono);font-size:12px;display:inline-block">
+                ${esc(p)}
+              </div>
+            `).join("")}
           </div>
         </div>
         <div>
-          <div class="digest-col-title">Recommended Properties</div>
+          <div class="digest-col-title" style="display:flex;align-items:center;gap:6px;color:var(--gold)">
+            <span>★</span> Recommended Properties
+          </div>
           <div class="digest-prop-list">
-            ${(d.recommended_properties || []).map(p => `<div class="digest-prop">${esc(p)}</div>`).join("")}
+            ${(d.recommended_properties || []).map(p => `
+              <div class="digest-prop" style="background:rgba(184,150,12,0.1);color:var(--gold);border-radius:4px;padding:3px 8px;margin-bottom:4px;font-family:var(--mono);font-size:12px;display:inline-block">
+                ${esc(p)}
+              </div>
+            `).join("")}
           </div>
         </div>
         <div>
-          <div class="digest-col-title">Trend Notes & KB</div>
-          <div class="digest-prop-list">
-            ${(d.notes || []).map(n => `<div class="digest-note">${esc(n)}</div>`).join("") || '<div class="digest-note" style="color:var(--stone)">No notes yet</div>'}
+          <div class="digest-col-title" style="color:var(--ink-2)">
+            Active Trend Notes & KB
+          </div>
+          <div class="digest-prop-list" style="max-height: 200px; overflow-y: auto;">
+            ${(d.notes || []).map(n => `<div class="digest-note" style="border-left:2px solid var(--gold);padding-left:8px;margin-bottom:8px;font-size:12px">${esc(n)}</div>`).join("") || '<div class="digest-note" style="color:var(--stone)">No notes yet</div>'}
           </div>
           ${(d.deprecated_properties || []).length ? `
-            <div class="digest-col-title" style="margin-top:12px;color:#c0392b">Deprecated</div>
-            ${d.deprecated_properties.map(p => `<div class="digest-prop" style="color:#c0392b">${esc(p)}</div>`).join("")}
+            <div class="digest-col-title" style="margin-top:16px;color:var(--red);display:flex;align-items:center;gap:6px">
+              <span>✕</span> Deprecated (Auto-Stripped)
+            </div>
+            <div class="digest-prop-list">
+              ${d.deprecated_properties.map(p => `
+                <div class="digest-prop" style="background:rgba(192,57,43,0.1);color:var(--red);text-decoration:line-through;border-radius:4px;padding:3px 8px;margin-bottom:4px;font-family:var(--mono);font-size:12px;display:inline-block">
+                  ${esc(p)}
+                </div>
+              `).join("")}
+            </div>
           ` : ""}
         </div>
       </div>`;
@@ -1191,6 +1419,27 @@ async function togglePageSelection(url, isSelected) {
   }
 }
 
+async function changePageSchemaMode(url, schemaMode) {
+  if (!currentProjectId) return;
+  const project = projectsCache.find(p => p.id === currentProjectId);
+  if (!project) return;
+
+  const pages = project.pages_found || [];
+  const targetPage = pages.find(p => p.url === url);
+  if (targetPage) {
+    targetPage.schema_mode = schemaMode;
+  }
+
+  try {
+    const res = await apiFetch(`/api/schema/projects/${currentProjectId}/pages`, "POST", { pages });
+    updateProjectCache(currentProjectId, { pages_found: res.pages });
+    toast("Schema mode updated!", "success");
+  } catch (err) {
+    toast("Failed to update schema mode: " + err.message, "error");
+    renderPagesSection(pages);
+  }
+}
+
 async function toggleAllPages(isSelected) {
   if (!currentProjectId) return;
   const project = projectsCache.find(p => p.id === currentProjectId);
@@ -1367,6 +1616,189 @@ async function submitFeedNews() {
   } catch (err) {
     hideLoading();
     toast("Failed to feed news: " + err.message, "error");
+  }
+}
+
+
+// ─── Folders Management ──────────────────────────────
+function openManageFoldersModal() {
+  const errorEl = document.getElementById("folders-modal-error");
+  if (errorEl) errorEl.classList.add("hidden");
+  document.getElementById("new-folder-name").value = "";
+  renderFoldersList();
+  openModal("folders-modal");
+}
+
+function renderFoldersList() {
+  const container = document.getElementById("folders-list-container");
+  if (!container) return;
+
+  if (!foldersCache.length) {
+    container.innerHTML = '<div style="padding:12px;font-size:12px;color:var(--stone);text-align:center">No folders created yet.</div>';
+    return;
+  }
+
+  container.innerHTML = foldersCache.map(f => `
+    <div class="folder-list-item" style="display:flex; justify-content:space-between; align-items:center; padding:8px 16px; border-bottom:1px solid var(--cream-2);">
+      <span style="font-size:13px; font-weight:500; color:var(--ink-2);">📁 ${esc(f.name)}</span>
+      <button class="btn-xs" onclick="deleteFolder(${f.id})" style="background:rgba(192,57,43,0.1); color:var(--red); border:none; padding:4px 8px; border-radius:4px; cursor:pointer;">Remove</button>
+    </div>
+  `).join("");
+}
+
+async function submitCreateFolder() {
+  const errorEl = document.getElementById("folders-modal-error");
+  if (errorEl) errorEl.classList.add("hidden");
+
+  const nameInput = document.getElementById("new-folder-name");
+  const name = nameInput.value.trim();
+  if (!name) {
+    if (errorEl) showError(errorEl, "Folder name is required.");
+    return;
+  }
+
+  showLoading("Creating folder...");
+  try {
+    const res = await apiFetch("/api/schema/folders", "POST", { name });
+    hideLoading();
+    foldersCache.push(res.folder);
+    nameInput.value = "";
+    renderFoldersList();
+    populateFolderDropdowns();
+    toast("Folder created successfully!", "success");
+    renderDashboard(projectsCache);
+  } catch (err) {
+    hideLoading();
+    if (errorEl) showError(errorEl, err.message || "Failed to create folder.");
+  }
+}
+
+async function deleteFolder(folderId) {
+  if (!confirm("Are you sure you want to delete this folder? All projects inside will be set to Uncategorized.")) return;
+
+  showLoading("Deleting folder...");
+  try {
+    await apiFetch(`/api/schema/folders/${folderId}`, "DELETE");
+    hideLoading();
+    foldersCache = foldersCache.filter(f => f.id !== folderId);
+    renderFoldersList();
+    populateFolderDropdowns();
+    toast("Folder removed.", "success");
+    await loadDashboard();
+  } catch (err) {
+    hideLoading();
+    toast("Delete folder failed: " + err.message, "error");
+  }
+}
+
+async function quickCreateFolder() {
+  const name = prompt("Enter new folder name:");
+  if (!name || !name.trim()) return;
+
+  showLoading("Creating folder...");
+  try {
+    const res = await apiFetch("/api/schema/folders", "POST", { name: name.trim() });
+    hideLoading();
+    foldersCache.push(res.folder);
+    populateFolderDropdowns();
+    
+    const select = document.getElementById("proj-folder");
+    if (select) {
+      select.value = res.folder.id;
+    }
+    toast(`Folder "${name.trim()}" created!`, "success");
+    renderDashboard(projectsCache);
+  } catch (err) {
+    hideLoading();
+    toast("Failed to create folder: " + err.message, "error");
+  }
+}
+
+// ─── Import / Export Feed & Trends ───────────────────
+async function exportFeed() {
+  showLoading("Preparing feed export...");
+  try {
+    const res = await apiFetch("/api/feed/kb?sorted=false");
+    hideLoading();
+    const entries = res.entries || [];
+    if (!entries.length) {
+      toast("Knowledge base is empty. Nothing to export.", "warning");
+      return;
+    }
+    
+    // Clean entries for export (remove ID, user_id, timestamps to allow clean import)
+    const exportData = entries.map(e => ({
+      entry_type: e.entry_type,
+      title: e.title,
+      content: e.content,
+      source: e.source,
+      tags: e.tags
+    }));
+
+    const blob = new Blob([JSON.stringify({ entries: exportData }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `hotel-schema-feed-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast(`Exported ${exportData.length} feed entries!`, "success");
+  } catch (err) {
+    hideLoading();
+    toast("Feed export failed: " + err.message, "error");
+  }
+}
+
+function importFeed(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      const entries = data.entries || [];
+      if (!Array.isArray(entries) || !entries.length) {
+        toast("Invalid file structure. Must contain an 'entries' array.", "error");
+        return;
+      }
+
+      showLoading(`Importing ${entries.length} feed entries...`);
+      const res = await apiFetch("/api/feed/kb/bulk", "POST", { entries });
+      hideLoading();
+      
+      const createdCount = res.created ? res.created.length : 0;
+      toast(`Successfully imported ${createdCount} feed entries!`, "success");
+      loadKBEntries();
+    } catch (err) {
+      hideLoading();
+      toast("Failed to import file: " + err.message, "error");
+    } finally {
+      // Reset file input
+      document.getElementById("import-feed-file").value = "";
+    }
+  };
+  reader.readAsText(file);
+}
+
+async function exportTrends() {
+  showLoading("Preparing trends export...");
+  try {
+    const res = await apiFetch("/api/feed/trends/digest");
+    hideLoading();
+    const digest = res.digest || {};
+
+    const blob = new Blob([JSON.stringify(digest, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `hotel-schema-trends-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("Trends exported successfully!", "success");
+  } catch (err) {
+    hideLoading();
+    toast("Trends export failed: " + err.message, "error");
   }
 }
 

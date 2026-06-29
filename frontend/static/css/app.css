@@ -1626,3 +1626,83 @@ table.user-table tr:hover td { background: var(--cream-2); }
   table.user-table { font-size: 11px; }
   table.user-table th, table.user-table td { padding: 7px 10px; }
 }
+
+/* ── SCHEMA MODE SELECTOR ────────────────────────────── */
+.schema-mode-select {
+  font-family: var(--sans);
+  border: 1.5px solid var(--cream-3);
+  border-radius: var(--radius);
+  background-color: #fff;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--ink-2);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.schema-mode-select:focus {
+  border-color: var(--gold);
+}
+
+/* ── KNOWLEDGE BASE SUMMARY STRUCTURE ─────────────────── */
+.schema-structure-summary {
+  margin-top: 10px;
+  padding: 12px;
+  background: var(--cream-2);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--gold);
+  font-size: 12px;
+}
+.summary-title {
+  font-family: var(--mono);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: var(--ink-3);
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+.summary-item {
+  margin-top: 4px;
+  font-family: var(--mono);
+  line-height: 1.5;
+}
+.summary-type-badge {
+  font-weight: 600;
+  color: var(--ink);
+  background: rgba(184, 150, 12, 0.15);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+.summary-keys {
+  color: var(--ink-3);
+}
+
+/* ── FEED TABS & REORGANIZATION ───────────────────────── */
+.feed-tabs-container {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  border-bottom: 1.5px solid var(--cream-3);
+  padding-bottom: 8px;
+}
+.feed-tab-btn {
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--stone);
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: background 0.2s, color 0.2s;
+}
+.feed-tab-btn:hover {
+  background: var(--cream-2);
+  color: var(--ink);
+}
+.feed-tab-btn.active {
+  background: var(--ink);
+  color: var(--cream);
+}
